@@ -1,35 +1,50 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { tasksByShift } from "@/lib/dummyData";
-import { getTasks, addTask, updateTaskTitle, deleteTask } from "@/lib/taskListStorage";
+import { fetchTasks, addTask, updateTaskTitle, deleteTask } from "@/lib/taskListStorage";
 import ChecklistItem from "@/components/ChecklistItem";
 import PhoneFrame from "@/components/PhoneFrame";
 
-export default function AdminChecklistPage() {
+function AdminChecklistContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const shift = searchParams.get("shift") in tasksByShift ? searchParams.get("shift") : "마감";
+  const rawShift = searchParams.get("shift");
+  const shift = rawShift && rawShift in tasksByShift ? rawShift : "마감";
 
   const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setItems(getTasks(shift));
+    let isMounted = true;
+    setLoading(true);
+    fetchTasks(shift).then((tasks) => {
+      if (isMounted) {
+        setItems(tasks);
+        setLoading(false);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
   }, [shift]);
 
-  function handleSaveTitle(taskId, newTitle) {
-    setItems(updateTaskTitle(shift, taskId, newTitle));
+  async function handleSaveTitle(taskId, newTitle) {
+    const updated = await updateTaskTitle(shift, taskId, newTitle);
+    setItems(updated);
   }
 
-  function handleDelete(taskId) {
-    setItems(deleteTask(shift, taskId));
+  async function handleDelete(taskId) {
+    const updated = await deleteTask(shift, taskId);
+    setItems(updated);
   }
 
-  function handleAdd() {
+  async function handleAdd() {
     const title = window.prompt("추가할 항목명");
     if (title && title.trim().length > 0) {
-      setItems(addTask(shift, title.trim()));
+      const updated = await addTask(shift, title.trim());
+      setItems(updated);
     }
   }
 
@@ -54,19 +69,30 @@ export default function AdminChecklistPage() {
             </p>
           </section>
 
-          <div className="flex flex-col gap-list-gap">
-            {items.map((task) => (
-              <ChecklistItem
-                key={task.id}
-                title={task.title}
-                completed={false}
-                onCamera={() => console.log("camera activated for", task.id)}
-                onSaveTitle={(newTitle) => handleSaveTitle(task.id, newTitle)}
-                onDelete={() => handleDelete(task.id)}
-                mode="admin"
-              />
-            ))}
-          </div>
+          {loading ? (
+            <div className="py-8 text-center text-mid-gray font-caption text-caption">
+              체크리스트 불러오는 중...
+            </div>
+          ) : (
+            <div className="flex flex-col gap-list-gap">
+              {items.map((task) => (
+                <ChecklistItem
+                  key={task.id}
+                  title={task.title}
+                  completed={false}
+                  onCamera={() => console.log("camera activated for", task.id)}
+                  onSaveTitle={(newTitle) => handleSaveTitle(task.id, newTitle)}
+                  onDelete={() => handleDelete(task.id)}
+                  mode="admin"
+                />
+              ))}
+              {items.length === 0 && (
+                <p className="text-center text-caption text-mid-gray py-6">
+                  등록된 항목이 없습니다.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="mt-8 flex justify-center">
             <button
@@ -80,5 +106,21 @@ export default function AdminChecklistPage() {
         </main>
       </div>
     </PhoneFrame>
+  );
+}
+
+export default function AdminChecklistPage() {
+  return (
+    <Suspense
+      fallback={
+        <PhoneFrame>
+          <div className="flex items-center justify-center h-full min-h-[400px] text-mid-gray text-caption font-caption">
+            로딩 중...
+          </div>
+        </PhoneFrame>
+      }
+    >
+      <AdminChecklistContent />
+    </Suspense>
   );
 }

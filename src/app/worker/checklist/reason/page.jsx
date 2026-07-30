@@ -12,25 +12,32 @@ export default function ReasonPage() {
   const [reason, setReason] = useState("");
   const [showToast, setShowToast] = useState(false);
   const [showError, setShowError] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   function handleChange(e) {
     setReason(e.target.value.slice(0, 200));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (reason.trim().length === 0) {
       setShowError(true);
       setTimeout(() => setShowError(false), 1000);
       return;
     }
 
-    setShowToast(true);
-    setTimeout(() => {
-      recordClockOut({ checklistComplete: false, reason: reason.trim() });
-      clearChecklistState();
-      clearSession();
-      router.push("/");
-    }, 2000);
+    setIsSubmitting(true);
+    try {
+      await recordClockOut({ checklistComplete: false, reason: reason.trim() });
+      setShowToast(true);
+      setTimeout(() => {
+        clearChecklistState();
+        clearSession();
+        router.push("/");
+      }, 1200);
+    } catch (err) {
+      console.error(err);
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -50,6 +57,7 @@ export default function ReasonPage() {
               <textarea
                 value={reason}
                 onChange={handleChange}
+                disabled={isSubmitting}
                 rows={6}
                 className={`w-full p-4 font-body-mobile text-body-mobile text-primary bg-pure-white border rounded-xl placeholder:text-mid-gray resize-none transition-all duration-200 ${
                   showError ? "border-error" : "border-line-gray"
@@ -63,9 +71,10 @@ export default function ReasonPage() {
               </div>
               <button
                 onClick={handleSubmit}
-                className="w-full h-[52px] mt-3 bg-primary text-on-primary font-button text-button rounded-xl transition-all hover:opacity-90 flex items-center justify-center gap-2 active:scale-95"
+                disabled={isSubmitting}
+                className="w-full h-[52px] mt-3 bg-primary text-on-primary font-button text-button rounded-xl transition-all hover:opacity-90 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
               >
-                제출
+                {isSubmitting ? "제출 중..." : "제출"}
                 <span className="material-symbols-outlined text-[20px]">send</span>
               </button>
             </div>

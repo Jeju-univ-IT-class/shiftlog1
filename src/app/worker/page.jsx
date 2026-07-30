@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSession, clearSession } from "@/lib/session";
-import { notices as initialNotices } from "@/lib/dummyData";
+import { fetchNotices, createNotice } from "@/lib/noticeStorage";
 import { isAnyShiftComplete, clearChecklistState } from "@/lib/checklistStorage";
 import { recordClockIn, recordClockOut } from "@/lib/attendanceStorage";
 import ShiftChips from "@/components/ShiftChips";
@@ -15,7 +15,8 @@ export default function WorkerMainPage() {
   const [session, setSession] = useState(null);
   const [clockedIn, setClockedIn] = useState(false);
   const [memo, setMemo] = useState("");
-  const [notices, setNotices] = useState(initialNotices);
+  const [notices, setNotices] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const s = getSession();
@@ -24,47 +25,78 @@ export default function WorkerMainPage() {
       return;
     }
     setSession(s);
+
+    async function loadNotices() {
+      const data = await fetchNotices();
+      setNotices(data);
+    }
+    loadNotices();
   }, [router]);
 
   function handleShiftSelect(shift) {
     router.push(`/worker/checklist?shift=${encodeURIComponent(shift)}`);
   }
 
-  function handleClockIn() {
-    setClockedIn(true);
-    recordClockIn();
+  async function handleClockIn() {
+    setIsSubmitting(true);
+    try {
+      const displayName = session?.displayName || "근무자";
+      await recordClockIn(displayName);
+      setClockedIn(true);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  function handleClockOut() {
+  async function handleClockOut() {
+    if (!clockedIn) return;
+
     if (isAnyShiftComplete()) {
-      recordClockOut({ checklistComplete: true, reason: null });
-      clearChecklistState();
-      clearSession();
-      router.push("/");
+      setIsSubmitting(true);
+      try {
+        await recordClockOut({ checklistComplete: true, reason: null });
+        clearChecklistState();
+        clearSession();
+        router.push("/");
+      } catch (err) {
+        console.error(err);
+        setIsSubmitting(false);
+      }
       return;
     }
+
     router.push("/worker/checklist/reason");
   }
 
-  function handleRegisterMemo() {
+  async function handleRegisterMemo() {
     if (memo.trim().length === 0) return;
-    setNotices((prev) => [
-      { id: `notice-${Date.now()}`, text: memo.trim(), time: "방금 전" },
-      ...prev,
-    ]);
+    const newNotice = await createNotice(memo);
+    if (newNotice) {
+      setNotices((prev) => [newNotice, ...prev]);
+    }
     setMemo("");
   }
 
   if (!session) return null;
 
+  const canClockOutWithoutReason = isAnyShiftComplete();
+
   return (
     <PhoneFrame>
       <main className="px-container-mobile flex flex-col p-4 pt-12 h-full">
         <section className="flex flex-col gap-4 mb-8">
+          <div className="rounded-[12px] border border-line-gray bg-surface-container px-4 py-3">
+            <p className="font-caption text-caption text-mid-gray">로그인 사용자</p>
+            <p className="font-headline-h2-mobile text-headline-h2-mobile font-bold text-primary mt-1">
+              {session.displayName || "근무자"}
+            </p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={handleClockIn}
-              disabled={clockedIn}
+              disabled={clockedIn || isSubmitting}
               className={`flex flex-col items-center justify-center gap-3 rounded-[12px] transition-all active:scale-95 shadow-none border h-20 ${
                 clockedIn
                   ? "bg-surface-gray text-mid-gray border-surface-gray cursor-not-allowed"
@@ -78,7 +110,7 @@ export default function WorkerMainPage() {
             </button>
             <button
               onClick={handleClockOut}
-              disabled={!clockedIn}
+              disabled={!clockedIn || isSubmitting}
               className={`flex flex-col items-center justify-center gap-3 border rounded-[12px] transition-all active:scale-95 shadow-none h-20 ${
                 clockedIn
                   ? "bg-primary text-pure-white border-primary"
@@ -94,6 +126,11 @@ export default function WorkerMainPage() {
           <div className="h-1 w-full bg-surface-container overflow-hidden rounded-full">
             <div className="h-full bg-primary w-1/3"></div>
           </div>
+          <p className="text-caption text-mid-gray text-center">
+            {canClockOutWithoutReason
+              ? "오픈/미들/마감 중 하나의 체크리스트가 모두 완료되면 사유 없이 퇴근할 수 있습니다."
+              : "체크리스트가 끝나지 않으면 사유를 적고 퇴근할 수 있습니다."}
+          </p>
         </section>
 
         <ShiftChips onSelect={handleShiftSelect} />
@@ -129,6 +166,11 @@ export default function WorkerMainPage() {
             {notices.map((n) => (
               <NoticeCard key={n.id} text={n.text} time={n.time} />
             ))}
+            {notices.length === 0 && (
+              <p className="text-caption text-mid-gray py-4 text-center">
+                등록된 특이사항이 없습니다.
+              </p>
+            )}
           </div>
         </section>
       </main>

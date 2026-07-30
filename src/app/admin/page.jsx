@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { notices } from "@/lib/dummyData";
+import { fetchNotices } from "@/lib/noticeStorage";
 import ShiftChips from "@/components/ShiftChips";
 import NoticeCard from "@/components/NoticeCard";
 import PhoneFrame from "@/components/PhoneFrame";
@@ -11,6 +11,7 @@ import PhoneFrame from "@/components/PhoneFrame";
 export default function AdminHomePage() {
   const router = useRouter();
   const [session, setSession] = useState(null);
+  const [noticesList, setNoticesList] = useState([]);
 
   useEffect(() => {
     const s = getSession();
@@ -19,6 +20,12 @@ export default function AdminHomePage() {
       return;
     }
     setSession(s);
+
+    async function loadNotices() {
+      const data = await fetchNotices();
+      setNoticesList(data);
+    }
+    loadNotices();
   }, [router]);
 
   function handleShiftSelect(shift) {
@@ -33,6 +40,9 @@ export default function AdminHomePage() {
         <div className="flex justify-between items-start mb-8">
           <div>
             <p className="font-caption text-caption text-mid-gray">사장님 모드</p>
+            <p className="font-body-mobile text-body-mobile text-primary mt-1">
+              {session.displayName || "관리자"} 님
+            </p>
             <h1 className="font-headline-h1-mobile text-headline-h1-mobile text-primary mt-1">
               {session.storeName} 관리자 대시보드
             </h1>
@@ -60,9 +70,14 @@ export default function AdminHomePage() {
             기타 메모 / 특이사항
           </h2>
           <div className="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar pr-1">
-            {notices.map((n) => (
+            {noticesList.map((n) => (
               <NoticeCard key={n.id} text={n.text} time={n.time} />
             ))}
+            {noticesList.length === 0 && (
+              <p className="text-caption text-mid-gray py-4 text-center">
+                등록된 특이사항이 없습니다.
+              </p>
+            )}
           </div>
         </section>
       </main>
