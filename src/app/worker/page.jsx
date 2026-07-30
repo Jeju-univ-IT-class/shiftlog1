@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSession, clearSession } from "@/lib/session";
+import { getSession } from "@/lib/session";
 import { fetchNotices, createNotice } from "@/lib/noticeStorage";
 import { isAnyShiftComplete, clearChecklistState } from "@/lib/checklistStorage";
-import { recordClockIn, recordClockOut, isClockedIn } from "@/lib/attendanceStorage";
+import { recordClockIn, recordClockOut, isClockedIn, getAttendanceLogs } from "@/lib/attendanceStorage";
 import ShiftChips from "@/components/ShiftChips";
 import NoticeCard from "@/components/NoticeCard";
 import PhoneFrame from "@/components/PhoneFrame";
@@ -18,6 +18,9 @@ export default function WorkerMainPage() {
   const [notices, setNotices] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [canClockOutWithoutReason, setCanClockOutWithoutReason] = useState(false);
+  
+  // 출퇴근 시각 정보 상태
+  const [currentLog, setCurrentLog] = useState(null);
 
   useEffect(() => {
     const s = getSession();
@@ -27,6 +30,12 @@ export default function WorkerMainPage() {
     }
     setSession(s);
     setClockedIn(isClockedIn());
+
+    // 최신 근태 기록 불러오기 (출/퇴근 시각 표시용)
+    const logs = getAttendanceLogs();
+    if (logs && logs.length > 0) {
+      setCurrentLog(logs[0]);
+    }
 
     async function loadNotices() {
       const data = await fetchNotices();
@@ -51,6 +60,12 @@ export default function WorkerMainPage() {
       const displayName = session?.displayName || "근무자";
       await recordClockIn(displayName);
       setClockedIn(true);
+
+      // 최신 출근 시간 즉시 반영
+      const logs = getAttendanceLogs();
+      if (logs && logs.length > 0) {
+        setCurrentLog(logs[0]);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -66,18 +81,29 @@ export default function WorkerMainPage() {
 
     if (complete) {
       try {
+        // 1. 완성 안내 메시지 출력
+        alert("체크리스트 완성 확인되었습니다.");
+
+        // 2. 퇴근 기록 (로그인 세션 유지: clearSession 제거)
         await recordClockOut({ checklistComplete: true, reason: null });
         clearChecklistState();
-        clearSession();
-        router.push("/");
+        setClockedIn(false);
+
+        // 3. 최신 퇴근 시각 화면에 즉시 반영
+        const logs = getAttendanceLogs();
+        if (logs && logs.length > 0) {
+          setCurrentLog(logs[0]);
+        }
       } catch (err) {
         console.error(err);
+      } finally {
         setIsSubmitting(false);
       }
       return;
     }
 
     setIsSubmitting(false);
+    // 체크리스트가 완료되지 않은 경우 미작성 사유 입력 페이지로 이동
     router.push("/worker/checklist/reason");
   }
 
@@ -96,12 +122,24 @@ export default function WorkerMainPage() {
     <PhoneFrame>
       <main className="px-container-mobile flex flex-col p-4 pt-12 h-full">
         <section className="flex flex-col gap-4 mb-8">
-          <div className="rounded-[12px] border border-line-gray bg-surface-container px-4 py-3">
-            <p className="font-caption text-caption text-mid-gray">로그인 사용자</p>
-            <p className="font-headline-h2-mobile text-headline-h2-mobile font-bold text-primary mt-1">
-              {session.displayName || "근무자"}
-            </p>
+          <div className="rounded-[12px] border border-line-gray bg-surface-container px-4 py-3 flex justify-between items-center">
+            <div>
+              <p className="font-caption text-caption text-mid-gray">로그인 사용자</p>
+              <p className="font-headline-h2-mobile text-headline-h2-mobile font-bold text-primary mt-1">
+                {session.displayName || "근무자"}
+              </p>
+            </div>
+            {/* 출근 및 퇴근 시간 표시 영역 */}
+            <div className="text-right text-xs text-mid-gray flex flex-col gap-0.5">
+              <p>
+                <span className="font-semibold text-primary">출근:</span> {currentLog?.clockIn || "-"}
+              </p>
+              <p>
+                <span className="font-semibold text-primary">퇴근:</span> {currentLog?.clockOut || "-"}
+              </p>
+            </div>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={handleClockIn}
