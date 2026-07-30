@@ -73,3 +73,11 @@ export function recordClockOut({ checklistComplete, reason = null }) {
 export function getAttendanceLogs() {
   return readLogs();
 }
+
+// 현재 "출근 중" 상태인지 확인 — CURRENT_LOG_KEY가 남아있으면
+// 아직 퇴근(recordClockOut) 처리가 안 된 것이므로 출근 상태로 간주합니다.
+// 페이지를 이동했다 돌아와도 이 값으로 출근 버튼 상태를 복원할 수 있습니다.
+export function isClockedIn() {
+  if (typeof window === "undefined") return false;
+  return Boolean(window.localStorage.getItem(CURRENT_LOG_KEY));
+}

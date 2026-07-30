@@ -1,5 +1,5 @@
 import { tasksByShift } from "@/lib/dummyData";
-import { getTasks } from "@/lib/taskListStorage";
+import { fetchTasks } from "@/lib/taskListStorage";
 
 const STORAGE_KEY = "oneuri_checklist_completed";
 const SHIFTS = Object.keys(tasksByShift);
@@ -35,13 +35,17 @@ export function toggleTaskCompletion(shift, taskId) {
 }
 
 // 오픈/미들/마감 중 하나라도 전체 완료된 체크리스트가 있으면 true
-export function isAnyShiftComplete() {
+// (화면에 보여주는 항목과 동일하게 fetchTasks로 Supabase 항목을 기준으로 확인)
+export async function isAnyShiftComplete() {
   const all = readAll();
-  return SHIFTS.some((shift) => {
-    const tasks = getTasks(shift);
+  for (const shift of SHIFTS) {
+    const tasks = await fetchTasks(shift);
     const completion = all[shift] ?? {};
-    return tasks.length > 0 && tasks.every((t) => completion[t.id]);
-  });
+    if (tasks.length > 0 && tasks.every((t) => completion[t.id])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function clearChecklistState() {

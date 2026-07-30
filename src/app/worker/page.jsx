@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { getSession, clearSession } from "@/lib/session";
 import { fetchNotices, createNotice } from "@/lib/noticeStorage";
 import { isAnyShiftComplete, clearChecklistState } from "@/lib/checklistStorage";
-import { recordClockIn, recordClockOut } from "@/lib/attendanceStorage";
+import { recordClockIn, recordClockOut, isClockedIn } from "@/lib/attendanceStorage";
 import ShiftChips from "@/components/ShiftChips";
 import NoticeCard from "@/components/NoticeCard";
 import PhoneFrame from "@/components/PhoneFrame";
@@ -17,6 +17,7 @@ export default function WorkerMainPage() {
   const [memo, setMemo] = useState("");
   const [notices, setNotices] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [canClockOutWithoutReason, setCanClockOutWithoutReason] = useState(false);
 
   useEffect(() => {
     const s = getSession();
@@ -25,12 +26,19 @@ export default function WorkerMainPage() {
       return;
     }
     setSession(s);
+    setClockedIn(isClockedIn());
 
     async function loadNotices() {
       const data = await fetchNotices();
       setNotices(data);
     }
     loadNotices();
+
+    async function loadCompletion() {
+      const complete = await isAnyShiftComplete();
+      setCanClockOutWithoutReason(complete);
+    }
+    loadCompletion();
   }, [router]);
 
   function handleShiftSelect(shift) {
@@ -53,8 +61,10 @@ export default function WorkerMainPage() {
   async function handleClockOut() {
     if (!clockedIn) return;
 
-    if (isAnyShiftComplete()) {
-      setIsSubmitting(true);
+    setIsSubmitting(true);
+    const complete = await isAnyShiftComplete();
+
+    if (complete) {
       try {
         await recordClockOut({ checklistComplete: true, reason: null });
         clearChecklistState();
@@ -67,6 +77,7 @@ export default function WorkerMainPage() {
       return;
     }
 
+    setIsSubmitting(false);
     router.push("/worker/checklist/reason");
   }
 
@@ -80,8 +91,6 @@ export default function WorkerMainPage() {
   }
 
   if (!session) return null;
-
-  const canClockOutWithoutReason = isAnyShiftComplete();
 
   return (
     <PhoneFrame>
