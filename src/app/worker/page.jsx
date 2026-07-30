@@ -209,9 +209,16 @@ export default function WorkerMainPage() {
             </button>
           </div>
 
+          {/* 알바생 화면 내 NoticeCard 목록 랜더링 영역 */}
           <div className="flex flex-col gap-2 mt-4 max-h-60 overflow-y-auto custom-scrollbar pr-1">
             {notices.map((n) => (
-              <NoticeCard key={n.id} text={n.text} time={n.time} />
+              <NoticeCard 
+                key={n.id} 
+                id={n.id}
+                text={n.text} 
+                time={n.time} 
+                authorRole={n.authorRole} // <- 작성자 역할(owner / worker) 전달!
+              />
             ))}
             {notices.length === 0 && (
               <p className="text-caption text-mid-gray py-4 text-center">
