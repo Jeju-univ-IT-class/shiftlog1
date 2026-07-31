@@ -1,7 +1,7 @@
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
 
 const STORAGE_KEY = "oneuri_task_photos";
-const DEFAULT_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "checklist-photos";
+const DEFAULT_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "photos";
 
 function readStoredPhotos() {
   if (typeof window === "undefined") return {};
@@ -64,16 +64,6 @@ export async function uploadTaskPhoto({ file, taskId, shift, title }) {
         };
 
         persistTaskPhoto(taskId, photo);
-
-        try {
-          await supabase.from("closing_details").insert({
-            task_id: taskId,
-            photo_url: photoUrl,
-            is_completed: true,
-          });
-        } catch (dbErr) {
-          console.warn("Photo metadata save skipped:", dbErr);
-        }
 
         return photo;
       }

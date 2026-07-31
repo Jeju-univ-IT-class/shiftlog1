@@ -83,6 +83,7 @@ function WorkerChecklistContent() {
           taskTitle,
           photoUrl: result.url,
           shift,
+          attendanceLogId: getCurrentAttendanceLogId(),
         });
 
         setUploadNotice("사진이 DB 및 스토리지에 정상 업로드되었습니다.");
