@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { clearSession } from "@/lib/session";
 import { clearChecklistState } from "@/lib/checklistStorage";
+import { clearPhotoPreviews } from "@/lib/photoStorage";
 import { recordClockOut } from "@/lib/attendanceStorage";
 import PhoneFrame from "@/components/PhoneFrame";
 
@@ -31,8 +31,8 @@ export default function ReasonPage() {
       setShowToast(true);
       setTimeout(() => {
         clearChecklistState();
-        clearSession();
-        router.push("/");
+        clearPhotoPreviews();
+        router.push("/worker");
       }, 1200);
     } catch (err) {
       console.error(err);

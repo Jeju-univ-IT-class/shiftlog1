@@ -22,6 +22,14 @@ export function getStoredPhotos() {
   return readStoredPhotos();
 }
 
+// 퇴근 시 호출 — 알바생 체크리스트 화면에 남아있는 "로컬 미리보기"만 지웁니다.
+// Supabase Storage에 올라간 실제 사진 파일이나 DB 기록은 그대로 유지되어
+// (사장님 페이지에서는 계속 보임) 여기서 건드리지 않습니다.
+export function clearPhotoPreviews() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(STORAGE_KEY);
+}
+
 export function persistTaskPhoto(taskId, photo) {
   if (!taskId) return;
   if (typeof window === "undefined") return;

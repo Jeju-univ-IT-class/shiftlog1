@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { fetchNotices, createNotice } from "@/lib/noticeStorage";
 import { isAnyShiftComplete, clearChecklistState } from "@/lib/checklistStorage";
+import { clearPhotoPreviews } from "@/lib/photoStorage";
 import { recordClockIn, recordClockOut, isClockedIn, getAttendanceLogs } from "@/lib/attendanceStorage";
 import ShiftChips from "@/components/ShiftChips";
 import NoticeCard from "@/components/NoticeCard";
@@ -18,7 +19,7 @@ export default function WorkerMainPage() {
   const [notices, setNotices] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [canClockOutWithoutReason, setCanClockOutWithoutReason] = useState(false);
-  
+
   // 출퇴근 시각 정보 상태
   const [currentLog, setCurrentLog] = useState(null);
 
@@ -99,6 +100,7 @@ export default function WorkerMainPage() {
         // 2. 퇴근 기록 (로그인 세션 유지: clearSession 제거)
         await recordClockOut({ checklistComplete: true, reason: null });
         clearChecklistState();
+        clearPhotoPreviews();
         setClockedIn(false);
 
         // 3. 최신 퇴근 시각 화면에 즉시 반영
