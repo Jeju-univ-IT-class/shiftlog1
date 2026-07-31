@@ -1,5 +1,6 @@
 import { tasksByShift } from "@/lib/dummyData";
 import { fetchTasks } from "@/lib/taskListStorage";
+import { supabase, isSupabaseConfigured } from "./supabaseClient"; // ★ Supabase 추가
 
 const STORAGE_KEY = "oneuri_checklist_completed";
 const SHIFTS = Object.keys(tasksByShift);
@@ -35,7 +36,6 @@ export function toggleTaskCompletion(shift, taskId) {
 }
 
 // 오픈/미들/마감 중 하나라도 전체 완료된 체크리스트가 있으면 true
-// (화면에 보여주는 항목과 동일하게 fetchTasks로 Supabase 항목을 기준으로 확인)
 export async function isAnyShiftComplete() {
   const all = readAll();
   for (const shift of SHIFTS) {
@@ -51,4 +51,70 @@ export async function isAnyShiftComplete() {
 export function clearChecklistState() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(STORAGE_KEY);
+}
+
+// ============================================================
+// ★ [신규 추가] Supabase Storage 사진 업로드 & closing_details DB 저장
+// ============================================================
+
+// 1. 사진 파일을 Supabase Storage('photos' 버킷)에 업로드
+export async function uploadTaskPhoto(file) {
+  if (!isSupabaseConfigured || !supabase || !file) return null;
+
+  try {
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const filePath = `checklist_photos/${fileName}`;
+
+    // Storage의 'photos' 버킷에 업로드
+    const { data, error } = await supabase.storage
+      .from("photos")
+      .upload(filePath, file);
+
+    if (error) {
+      console.error("Storage 사진 업로드 오류:", error);
+      return null;
+    }
+
+    // 업로드된 파일의 공개 URL 가져오기
+    const { data: publicUrlData } = supabase.storage
+      .from("photos")
+      .getPublicUrl(filePath);
+
+    return publicUrlData.publicUrl;
+  } catch (err) {
+    console.error("사진 업로드 예외 발생:", err);
+    return null;
+  }
+}
+
+// 2. closing_details 테이블에 마감 기록 및 사진 URL 저장
+// closing_details 테이블에 마감 기록 및 사진 URL 저장
+export async function saveClosingDetail({ workerName, taskId, taskTitle, photoUrl, shift }) {
+  if (!isSupabaseConfigured || !supabase) return false;
+
+  try {
+    // 안전한 데이터 맵핑 (필수 컬럼 중심)
+    const payload = {
+      worker_name: workerName || "근무자",
+      photo_url: photoUrl || null,
+      created_at: new Date().toISOString(),
+    };
+
+    // 추가 정보가 있을 때만 포함
+    if (taskTitle) payload.task_title = taskTitle;
+
+    const { data, error } = await supabase
+      .from("closing_details")
+      .insert([payload]);
+
+    if (error) {
+      console.error("closing_details DB 저장 오류 상세:", error.message || error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("closing_details DB 저장 예외:", err);
+    return false;
+  }
 }

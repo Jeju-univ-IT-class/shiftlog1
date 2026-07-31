@@ -4,8 +4,9 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { tasksByShift } from "@/lib/dummyData";
 import { fetchTasks } from "@/lib/taskListStorage";
-import { getShiftCompletion, toggleTaskCompletion } from "@/lib/checklistStorage";
+import { getShiftCompletion, toggleTaskCompletion, saveClosingDetail } from "@/lib/checklistStorage";
 import { getStoredPhotos, uploadTaskPhoto } from "@/lib/photoStorage";
+import { getSession } from "@/lib/session";
 import ChecklistItem from "@/components/ChecklistItem";
 import PhoneFrame from "@/components/PhoneFrame";
 
@@ -20,8 +21,12 @@ function WorkerChecklistContent() {
   const [completed, setCompleted] = useState({});
   const [photoPreviews, setPhotoPreviews] = useState({});
   const [uploadNotice, setUploadNotice] = useState("");
+  const [session, setSession] = useState(null);
 
   useEffect(() => {
+    const s = getSession();
+    if (s) setSession(s);
+
     let isMounted = true;
     setLoading(true);
     fetchTasks(shift).then((data) => {
@@ -45,27 +50,47 @@ function WorkerChecklistContent() {
     setCompleted({ ...next });
   }
 
+  // ★ 카메라 촬영 및 Supabase Storage + DB(closing_details) 동시 저장 처리
   async function handleCamera(id) {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
     input.capture = "environment";
+
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
+
+      const currentTask = tasks.find((task) => task.id === id);
+      const taskTitle = currentTask?.title || "체크리스트";
+
+      // 1. Storage에 파일 업로드
       const result = await uploadTaskPhoto({
         file,
         taskId: id,
         shift,
-        title: tasks.find((task) => task.id === id)?.title || "체크리스트",
+        title: taskTitle,
       });
+
       if (result?.url) {
         setPhotoPreviews((prev) => ({ ...prev, [id]: result.url }));
-        setUploadNotice("사진이 업로드되었습니다.");
+
+        // 2. ★ Supabase DB (closing_details 테이블)에 사진 URL 기록 추가!
+        const workerName = session?.displayName || session?.name || "근무자";
+        await saveClosingDetail({
+          workerName,
+          taskId: id,
+          taskTitle,
+          photoUrl: result.url,
+          shift,
+        });
+
+        setUploadNotice("사진이 DB 및 스토리지에 정상 업로드되었습니다.");
       } else {
         setUploadNotice("사진 업로드에 실패했습니다. Supabase Storage 버킷을 확인해주세요.");
       }
     };
+
     input.click();
   }
 
@@ -89,7 +114,7 @@ function WorkerChecklistContent() {
               오늘의 필수 할 일을 확인하고 완료해주세요.
             </p>
             {uploadNotice && (
-              <p className="font-caption text-caption text-primary mt-2">{uploadNotice}</p>
+              <p className="font-caption text-caption text-primary mt-2 font-bold">{uploadNotice}</p>
             )}
           </section>
 
