@@ -1,7 +1,7 @@
 import { tasksByShift } from "@/lib/dummyData";
 import { fetchTasks } from "@/lib/taskListStorage";
 import { getCurrentAttendanceLogId, saveAttendancePhotoRef } from "./attendanceStorage";
-import { supabase, isSupabaseConfigured } from "./supabaseClient"; // ★ Supabase 추가
+import { supabase, isSupabaseConfigured } from "./supabaseClient.js"; // ★ Supabase 추가
 
 const STORAGE_KEY = "oneuri_checklist_completed";
 const SHIFTS = Object.keys(tasksByShift);
@@ -91,15 +91,11 @@ export async function uploadTaskPhoto(file) {
 
 // 2. closing_logs / closing_details 테이블에 마감 기록 및 사진 URL 저장
 export async function saveClosingDetail({ workerName, taskId, taskTitle, photoUrl, shift, attendanceLogId }) {
-  const currentAttendanceLogId = attendanceLogId || getCurrentAttendanceLogId();
-  if (photoUrl) {
-    const fallbackId = currentAttendanceLogId || "current";
-    saveAttendancePhotoRef(fallbackId, photoUrl, workerName);
-  }
-
-  if (!isSupabaseConfigured || !supabase || !photoUrl) return true;
+  if (!isSupabaseConfigured || !supabase || !photoUrl) return false;
 
   try {
+    const currentAttendanceLogId = attendanceLogId || getCurrentAttendanceLogId();
+
     const { data: createdLog, error: logError } = await supabase
       .from("closing_logs")
       .insert([
@@ -130,6 +126,11 @@ export async function saveClosingDetail({ workerName, taskId, taskTitle, photoUr
     if (detailError) {
       console.error("closing_details DB 저장 오류 상세:", detailError.message || detailError);
       return false;
+    }
+
+    const logKey = currentAttendanceLogId || createdLog.id;
+    if (logKey) {
+      saveAttendancePhotoRef(logKey, photoUrl, workerName || "근무자");
     }
 
     return true;

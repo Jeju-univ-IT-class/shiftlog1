@@ -1,13 +1,13 @@
-import { supabase, isSupabaseConfigured } from "./supabaseClient";
+import { supabase, isSupabaseConfigured } from "./supabaseClient.js";
 
 const LOGS_KEY = "oneuri_attendance_logs";
 const CURRENT_LOG_KEY = "oneuri_current_attendance_log_id";
-const ATTENDANCE_PHOTOS_KEY = "oneuri_attendance_photo_refs";
 
 export function getCurrentAttendanceLogId() {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(CURRENT_LOG_KEY);
 }
+const ATTENDANCE_PHOTOS_KEY = "oneuri_attendance_photo_refs";
 
 function readAttendancePhotoRefs() {
   if (typeof window === "undefined") return {};
@@ -210,19 +210,24 @@ export async function fetchAttendanceLogsByDate(targetDateStr) {
       const { data: closingLogsData, error: closingLogsErr } = await supabase
         .from("closing_logs")
         .select("id, attendance_id, worker_name, created_at, closing_details(*)")
+        .gte("created_at", startOfDay)
+        .lte("created_at", endOfDay)
         .order("created_at", { ascending: false });
 
       if (!logErr && logs) {
         const photosByAttendanceId = new Map();
         const photosByWorkerName = new Map();
+        const allDayPhotos = [];
 
         if (!closingLogsErr && closingLogsData) {
           closingLogsData.forEach((entry) => {
             const photos = (entry.closing_details || [])
-              .map((detail) => detail.photo_url)
+              .map((detail) => detail.photo_url || detail.url || detail.photoUrl)
               .filter(Boolean);
 
             if (photos.length === 0) return;
+
+            allDayPhotos.push(...photos);
 
             if (entry.attendance_id) {
               const existing = photosByAttendanceId.get(String(entry.attendance_id)) || [];
@@ -239,12 +244,14 @@ export async function fetchAttendanceLogsByDate(targetDateStr) {
         return logs.map((log) => {
           const workerName = log.worker_name || log.user_name || "근무자";
           const attendanceId = String(log.id);
-          const remotePhotos = [
+          const dbPhotos = [
             ...(photosByAttendanceId.get(attendanceId) || []),
             ...(photosByWorkerName.get(workerName) || []),
           ];
           const localPhotos = getAttendancePhotoRefs(attendanceId, workerName);
-          const uniquePhotos = [...new Set([...remotePhotos, ...localPhotos].filter(Boolean))];
+          const photos = dbPhotos.length > 0 ? [...dbPhotos, ...localPhotos] : [...allDayPhotos, ...localPhotos];
+
+          const uniquePhotos = [...new Set(photos.filter(Boolean))];
 
           return {
             id: log.id,

@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from "./supabaseClient";
+import { supabase, isSupabaseConfigured } from "./supabaseClient.js";
 import { tasksByShift } from "@/lib/dummyData";
 
 const STORAGE_KEY = "oneuri_tasks";

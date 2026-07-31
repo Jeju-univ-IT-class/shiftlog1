@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from "./supabaseClient";
+import { supabase, isSupabaseConfigured } from "./supabaseClient.js";
 import { store as dummyStore } from "./dummyData";
 
 function inferRole(email, metadataRole) {

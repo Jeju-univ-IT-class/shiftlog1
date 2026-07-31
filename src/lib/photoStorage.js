@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from "./supabaseClient";
+import { supabase, isSupabaseConfigured } from "./supabaseClient.js";
 
 const STORAGE_KEY = "oneuri_task_photos";
 const DEFAULT_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "photos";
@@ -20,6 +20,14 @@ function writeStoredPhotos(data) {
 
 export function getStoredPhotos() {
   return readStoredPhotos();
+}
+
+// 퇴근 시 호출 — 알바생 체크리스트 화면에 남아있는 "로컬 미리보기"만 지웁니다.
+// Supabase Storage에 올라간 실제 사진 파일이나 DB 기록은 그대로 유지되어
+// (사장님 페이지에서는 계속 보임) 여기서 건드리지 않습니다.
+export function clearPhotoPreviews() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(STORAGE_KEY);
 }
 
 export function persistTaskPhoto(taskId, photo) {
@@ -50,8 +58,24 @@ export async function uploadTaskPhoto({ file, taskId, shift, title }) {
 
       if (uploadError) throw uploadError;
 
-      const { data: publicData } = supabase.storage.from(DEFAULT_BUCKET).getPublicUrl(path);
-      const photoUrl = publicData?.publicUrl;
+      let photoUrl = null;
+
+      try {
+        const { data: signedData, error: signedError } = await supabase.storage
+          .from(DEFAULT_BUCKET)
+          .createSignedUrl(path, 60 * 60 * 24 * 7);
+
+        if (!signedError && signedData?.signedUrl) {
+          photoUrl = signedData.signedUrl;
+        }
+      } catch (signedErr) {
+        console.warn("Signed URL 생성 실패, public URL로 대체합니다:", signedErr);
+      }
+
+      if (!photoUrl) {
+        const { data: publicData } = supabase.storage.from(DEFAULT_BUCKET).getPublicUrl(path);
+        photoUrl = publicData?.publicUrl || null;
+      }
 
       if (photoUrl) {
         const photo = {
