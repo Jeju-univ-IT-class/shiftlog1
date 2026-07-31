@@ -67,8 +67,7 @@ export default function LoginPage() {
     <PhoneFrame>
       <div className="relative h-full min-h-screen sm:min-h-[800px] flex flex-col items-center justify-center text-primary selection:bg-surface-gray overflow-hidden">
         <header className="w-full flex flex-col items-center px-gutter text-center max-w-sm">
-          <h1 className="font-display-mobile text-display-mobile text-primary">SHIFTLOG</h1>
-          <h1 className="font-display-mobile text-display-mobile text-primary">LOGIN</h1>
+          <h1 className="font-display-mobile text-display-mobile text-primary">SHIFTLOG LOGIN</h1>
 
           <div className="flex rounded-full border border-line-gray p-1 mt-4">
             <button
