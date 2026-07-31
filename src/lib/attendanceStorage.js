@@ -1,30 +1,35 @@
+import { supabase, isSupabaseConfigured } from "./supabaseClient";
+
 const LOGS_KEY = "oneuri_attendance_logs";
 const CURRENT_LOG_KEY = "oneuri_current_attendance_log_id";
 
-// 이름/사번 개인 식별 체계는 아직 없어서(관리자 화면에서 알바생을 추가하는
-// 기능이 생기기 전까지) 실제 기록은 "근무자"로만 표시됩니다.
-// 아래 6개는 화면이 비어 보이지 않도록 남겨둔 예시 데이터입니다.
-const SEED_LOGS = [
-  { id: "1234", name: "김철수", clockIn: "09:00", clockOut: "18:05", checklistComplete: true, reason: null },
-  { id: "5678", name: "이영희", clockIn: "08:52", clockOut: "18:12", checklistComplete: true, reason: null },
-  { id: "9012", name: "박지민", clockIn: "09:15", clockOut: "18:00", checklistComplete: false, reason: "냉장고 고장으로 성에 제거 작업을 완료하지 못했습니다." },
-  { id: "3456", name: "최동욱", clockIn: "08:45", clockOut: "17:55", checklistComplete: true, reason: null },
-  { id: "7890", name: "정수아", clockIn: "09:00", clockOut: "20:30", checklistComplete: false, reason: "손님 응대가 늦어져 분리수거를 마치지 못했습니다." },
-  { id: "2143", name: "한태호", clockIn: "08:58", clockOut: "18:03", checklistComplete: true, reason: null },
-];
+function nowTime() {
+  const d = new Date();
+  return d.toLocaleTimeString("ko-KR", { 
+    hour: "2-digit", 
+    minute: "2-digit", 
+    hour12: false, 
+    timeZone: "Asia/Seoul" 
+  });
+}
+
+function formatKSTTime(isoString) {
+  if (!isoString) return "-";
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return isoString;
+  
+  return date.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Seoul",
+  });
+}
 
 function readLogs() {
-  if (typeof window === "undefined") return SEED_LOGS;
+  if (typeof window === "undefined") return [];
   const raw = window.localStorage.getItem(LOGS_KEY);
-  if (!raw) {
-    window.localStorage.setItem(LOGS_KEY, JSON.stringify(SEED_LOGS));
-    return SEED_LOGS;
-  }
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return SEED_LOGS;
-  }
+  return raw ? JSON.parse(raw) : [];
 }
 
 function writeLogs(logs) {
@@ -32,37 +37,79 @@ function writeLogs(logs) {
   window.localStorage.setItem(LOGS_KEY, JSON.stringify(logs));
 }
 
-function nowTime() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
+// 1. 출근 기록
+export async function recordClockIn(workerName = "근무자") {
+  const nowISO = new Date().toISOString();
+  let dbLogId = null;
 
-// 출근 버튼 클릭 시 호출 — 새 근태 기록을 시작하고, 퇴근 시 이어서
-// 업데이트할 수 있도록 이 기록의 id를 별도로 저장해둡니다.
-export function recordClockIn() {
-  const logs = readLogs();
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("attendance_logs")
+        .insert([
+          {
+            store_id: "00000000-0000-0000-0000-000000000001",
+            worker_name: workerName,
+            user_name: workerName,
+            clock_in_time: nowISO,
+          },
+        ])
+        .select();
+
+      if (!error && data && data[0]) {
+        dbLogId = data[0].id;
+      }
+    } catch (err) {
+      console.error("Supabase 출근 저장 예외:", err);
+    }
+  }
+
+  const logId = dbLogId || `log-${Date.now()}`;
   const newLog = {
-    id: `log-${Date.now()}`,
-    name: "근무자",
+    id: logId,
+    name: workerName,
+    worker_name: workerName,
     clockIn: nowTime(),
     clockOut: null,
     checklistComplete: null,
     reason: null,
+    createdAt: nowISO
   };
+
+  const logs = readLogs();
   writeLogs([newLog, ...logs]);
+
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(CURRENT_LOG_KEY, newLog.id);
+    window.localStorage.setItem(CURRENT_LOG_KEY, String(logId));
   }
-  return newLog.id;
+
+  return logId;
 }
 
-// 퇴근 처리(체크리스트 전부 완료 또는 사유 제출) 시 호출
-export function recordClockOut({ checklistComplete, reason = null }) {
+// 2. 퇴근 기록
+export async function recordClockOut({ checklistComplete, reason = null }) {
   if (typeof window === "undefined") return;
   const currentId = window.localStorage.getItem(CURRENT_LOG_KEY);
+  const nowISO = new Date().toISOString();
+
+  if (isSupabaseConfigured && supabase && currentId) {
+    try {
+      await supabase
+        .from("attendance_logs")
+        .update({
+          clock_out_time: nowISO,
+          checklist_complete: checklistComplete,
+          reason: reason,
+        })
+        .eq("id", currentId);
+    } catch (err) {
+      console.error("Supabase 퇴근 저장 예외:", err);
+    }
+  }
+
   const logs = readLogs();
   const updated = logs.map((log) =>
-    log.id === currentId
+    String(log.id) === String(currentId)
       ? { ...log, clockOut: nowTime(), checklistComplete, reason }
       : log
   );
@@ -70,13 +117,57 @@ export function recordClockOut({ checklistComplete, reason = null }) {
   window.localStorage.removeItem(CURRENT_LOG_KEY);
 }
 
+// 3. 특정한 날짜(targetDate: 'YYYY-MM-DD')의 근태 기록 조회 함수 (★ 핵심 구현)
+export async function fetchAttendanceLogsByDate(targetDateStr) {
+  // 선택한 날짜의 한국 기준 00:00:00 ~ 23:59:59 타임스탬프 계산
+  const startOfDay = new Date(`${targetDateStr}T00:00:00+09:00`).toISOString();
+  const endOfDay = new Date(`${targetDateStr}T23:59:59+09:00`).toISOString();
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("attendance_logs")
+        .select("*")
+        .gte("clock_in_time", startOfDay)
+        .lte("clock_in_time", endOfDay)
+        .order("clock_in_time", { ascending: false });
+
+      if (!error && data) {
+        return data.map((log) => ({
+          id: log.id,
+          name: log.worker_name || log.user_name || "근무자",
+          worker_name: log.worker_name || log.user_name || "근무자",
+          clockIn: formatKSTTime(log.clock_in_time),
+          clockOut: formatKSTTime(log.clock_out_time),
+          checklistComplete: log.checklist_complete,
+          reason: log.reason,
+          reason_created_at: log.reason_created_at,
+        }));
+      }
+    } catch (err) {
+      console.warn("Supabase 날짜별 조회 실패, 로컬데이터 사용:", err);
+    }
+  }
+
+  // 로컬 fallback 필터링
+  const logs = readLogs();
+  return logs.filter(log => {
+    if (!log.createdAt) return true;
+    const logDate = new Date(log.createdAt).toISOString().split('T')[0];
+    return logDate === targetDateStr;
+  });
+}
+
+// 기존 전체 불러오기 호환용
+export async function fetchAttendanceLogs() {
+  const todayStr = new Date().toISOString().split('T')[0];
+  return fetchAttendanceLogsByDate(todayStr);
+}
+
 export function getAttendanceLogs() {
   return readLogs();
 }
 
-// 현재 "출근 중" 상태인지 확인 — CURRENT_LOG_KEY가 남아있으면
-// 아직 퇴근(recordClockOut) 처리가 안 된 것이므로 출근 상태로 간주합니다.
-// 페이지를 이동했다 돌아와도 이 값으로 출근 버튼 상태를 복원할 수 있습니다.
 export function isClockedIn() {
   if (typeof window === "undefined") return false;
   return Boolean(window.localStorage.getItem(CURRENT_LOG_KEY));
