@@ -3,6 +3,11 @@ import { supabase, isSupabaseConfigured } from "./supabaseClient";
 const LOGS_KEY = "oneuri_attendance_logs";
 const CURRENT_LOG_KEY = "oneuri_current_attendance_log_id";
 
+export function getCurrentAttendanceLogId() {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(CURRENT_LOG_KEY);
+}
+
 function formatKSTTime(isoString) {
   if (!isoString) return "-";
   const date = new Date(isoString);
@@ -155,25 +160,45 @@ export async function fetchAttendanceLogsByDate(targetDateStr) {
         .lte("clock_in_time", endOfDay)
         .order("clock_in_time", { ascending: false });
 
-      // 2. closing_details 테이블 데이터 전체 조회
-      const { data: detailsData, error: detailErr } = await supabase
-        .from("closing_details")
-        .select("*");
+      // 2. closing_logs + closing_details 데이터 조회
+      const { data: closingLogsData, error: closingLogsErr } = await supabase
+        .from("closing_logs")
+        .select("id, attendance_id, worker_name, created_at, closing_details(*)")
+        .order("created_at", { ascending: false });
 
       if (!logErr && logs) {
+        const photosByAttendanceId = new Map();
+        const photosByWorkerName = new Map();
+
+        if (!closingLogsErr && closingLogsData) {
+          closingLogsData.forEach((entry) => {
+            const photos = (entry.closing_details || [])
+              .map((detail) => detail.photo_url)
+              .filter(Boolean);
+
+            if (photos.length === 0) return;
+
+            if (entry.attendance_id) {
+              const existing = photosByAttendanceId.get(String(entry.attendance_id)) || [];
+              photosByAttendanceId.set(String(entry.attendance_id), [...existing, ...photos]);
+            }
+
+            if (entry.worker_name) {
+              const existing = photosByWorkerName.get(String(entry.worker_name)) || [];
+              photosByWorkerName.set(String(entry.worker_name), [...existing, ...photos]);
+            }
+          });
+        }
+
         return logs.map((log) => {
           const workerName = log.worker_name || log.user_name || "근무자";
+          const attendanceId = String(log.id);
+          const photos = [
+            ...(photosByAttendanceId.get(attendanceId) || []),
+            ...(photosByWorkerName.get(workerName) || []),
+          ];
 
-          // ★ 핵심: 해당 근무자 이름(worker_name)과 일치하는 사진만 필터링!
-          const userPhotos = (!detailErr && detailsData)
-            ? detailsData
-                .filter((item) => {
-                  // DB에 저장된 worker_name과 출퇴근 로그의 worker_name 비교
-                  return item.worker_name === workerName;
-                })
-                .map((item) => item.photo_url || item.image_url || item.photo)
-                .filter(Boolean)
-            : [];
+          const uniquePhotos = [...new Set(photos.filter(Boolean))];
 
           return {
             id: log.id,
@@ -184,7 +209,7 @@ export async function fetchAttendanceLogsByDate(targetDateStr) {
             checklistComplete: log.checklist_complete,
             reason: log.reason,
             reason_created_at: log.reason_created_at,
-            photos: userPhotos, // ★ 해당 알바생이 올린 사진만 개별 매칭
+            photos: uniquePhotos,
           };
         });
       }
