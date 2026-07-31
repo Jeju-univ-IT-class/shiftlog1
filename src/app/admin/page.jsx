@@ -13,6 +13,18 @@ export default function AdminDashboardPage() {
   const [notices, setNotices] = useState([]);
   const [memo, setMemo] = useState("");
 
+  // 오늘 날짜 포맷팅 함수 (KST 기준)
+  const getTodayFormatted = () => {
+    const today = new Date();
+    return today.toLocaleDateString("ko-KR", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "short",
+      timeZone: "Asia/Seoul"
+    });
+  };
+
   useEffect(() => {
     const s = getSession();
     if (!s || s.role !== "owner") {
@@ -58,11 +70,14 @@ export default function AdminDashboardPage() {
         {/* 상단 프로필 영역 */}
         <section className="flex justify-between items-start mb-6">
           <div>
-            <p className="text-caption text-mid-gray">사장님 모드</p>
+            {/* 당일 날짜 표시 추가 */}
+            <p className="text-xs font-bold text-primary mb-1">
+               {getTodayFormatted()}
+            </p>
             <p className="font-headline-h2-mobile text-headline-h2-mobile font-bold text-primary">
               {session.displayName || session.name || "관리자"} 님
             </p>
-            <h1 className="text-xl font-bold text-primary mt-1">
+            <h1 className="text-xl font-bold text-primary mt-0.5">
               {session.storeName || "테스트 매장"} 관리자 대시보드
             </h1>
           </div>

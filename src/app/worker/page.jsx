@@ -22,6 +22,18 @@ export default function WorkerMainPage() {
   // 출퇴근 시각 정보 상태
   const [currentLog, setCurrentLog] = useState(null);
 
+  // 오늘 날짜 포맷팅 함수 (KST 기준)
+  const getTodayFormatted = () => {
+    const today = new Date();
+    return today.toLocaleDateString("ko-KR", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "short",
+      timeZone: "Asia/Seoul"
+    });
+  };
+
   useEffect(() => {
     const s = getSession();
     if (!s || s.role !== "worker") {
@@ -122,10 +134,15 @@ export default function WorkerMainPage() {
     <PhoneFrame>
       <main className="px-container-mobile flex flex-col p-4 pt-12 h-full">
         <section className="flex flex-col gap-4 mb-8">
+          {/* 상단 당일 날짜 및 로그인 정보 카드 */}
           <div className="rounded-[12px] border border-line-gray bg-surface-container px-4 py-3 flex justify-between items-center">
             <div>
-              <p className="font-caption text-caption text-mid-gray">로그인 사용자</p>
-              <p className="font-headline-h2-mobile text-headline-h2-mobile font-bold text-primary mt-1">
+              {/* 당일 날짜 표기 추가 */}
+              <p className="text-xs font-bold text-primary mb-0.5">
+                 {getTodayFormatted()}
+              </p>
+              <p className="font-caption text-caption text-mid-gray"></p>
+              <p className="font-headline-h2-mobile text-headline-h2-mobile font-bold text-primary mt-0.5">
                 {session.displayName || "근무자"}
               </p>
             </div>
@@ -217,7 +234,7 @@ export default function WorkerMainPage() {
                 id={n.id}
                 text={n.text} 
                 time={n.time} 
-                authorRole={n.authorRole} // <- 작성자 역할(owner / worker) 전달!
+                authorRole={n.authorRole}
               />
             ))}
             {notices.length === 0 && (
