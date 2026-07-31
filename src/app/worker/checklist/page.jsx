@@ -6,6 +6,7 @@ import { tasksByShift } from "@/lib/dummyData";
 import { fetchTasks } from "@/lib/taskListStorage";
 import { getShiftCompletion, toggleTaskCompletion, saveClosingDetail } from "@/lib/checklistStorage";
 import { getStoredPhotos, uploadTaskPhoto } from "@/lib/photoStorage";
+import { getCurrentAttendanceLogId } from "@/lib/attendanceStorage";
 import { getSession } from "@/lib/session";
 import ChecklistItem from "@/components/ChecklistItem";
 import PhoneFrame from "@/components/PhoneFrame";
@@ -75,7 +76,7 @@ function WorkerChecklistContent() {
       if (result?.url) {
         setPhotoPreviews((prev) => ({ ...prev, [id]: result.url }));
 
-        // 2. ★ Supabase DB (closing_details 테이블)에 사진 URL 기록 추가!
+        // 2. ★ Supabase DB (closing_logs / closing_details 테이블)에 사진 URL 기록 추가!
         const workerName = session?.displayName || session?.name || "근무자";
         await saveClosingDetail({
           workerName,
@@ -83,6 +84,7 @@ function WorkerChecklistContent() {
           taskTitle,
           photoUrl: result.url,
           shift,
+          attendanceLogId: getCurrentAttendanceLogId(),
         });
 
         setUploadNotice("사진이 DB 및 스토리지에 정상 업로드되었습니다.");

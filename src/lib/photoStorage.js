@@ -65,16 +65,6 @@ export async function uploadTaskPhoto({ file, taskId, shift, title }) {
 
         persistTaskPhoto(taskId, photo);
 
-        try {
-          await supabase.from("closing_details").insert({
-            task_id: taskId,
-            photo_url: photoUrl,
-            is_completed: true,
-          });
-        } catch (dbErr) {
-          console.warn("Photo metadata save skipped:", dbErr);
-        }
-
         return photo;
       }
     } catch (err) {

@@ -1,5 +1,6 @@
 import { tasksByShift } from "@/lib/dummyData";
 import { fetchTasks } from "@/lib/taskListStorage";
+import { getCurrentAttendanceLogId } from "./attendanceStorage";
 import { supabase, isSupabaseConfigured } from "./supabaseClient"; // ★ Supabase 추가
 
 const STORAGE_KEY = "oneuri_checklist_completed";
@@ -88,30 +89,45 @@ export async function uploadTaskPhoto(file) {
   }
 }
 
-// 2. closing_details 테이블에 마감 기록 및 사진 URL 저장
-// closing_details 테이블에 마감 기록 및 사진 URL 저장
-export async function saveClosingDetail({ workerName, taskId, taskTitle, photoUrl, shift }) {
-  if (!isSupabaseConfigured || !supabase) return false;
+// 2. closing_logs / closing_details 테이블에 마감 기록 및 사진 URL 저장
+export async function saveClosingDetail({ workerName, taskId, taskTitle, photoUrl, shift, attendanceLogId }) {
+  if (!isSupabaseConfigured || !supabase || !photoUrl) return false;
 
   try {
-    // 안전한 데이터 맵핑 (필수 컬럼 중심)
-    const payload = {
-      worker_name: workerName || "근무자",
-      photo_url: photoUrl || null,
-      created_at: new Date().toISOString(),
-    };
+    const currentAttendanceLogId = attendanceLogId || getCurrentAttendanceLogId();
 
-    // 추가 정보가 있을 때만 포함
-    if (taskTitle) payload.task_title = taskTitle;
+    const { data: createdLog, error: logError } = await supabase
+      .from("closing_logs")
+      .insert([
+        {
+          worker_name: workerName || "근무자",
+          attendance_id: currentAttendanceLogId || null,
+          note: taskTitle ? `${shift || "마감"} 체크리스트 인증` : null,
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select("id")
+      .single();
 
-    const { data, error } = await supabase
-      .from("closing_details")
-      .insert([payload]);
-
-    if (error) {
-      console.error("closing_details DB 저장 오류 상세:", error.message || error);
+    if (logError || !createdLog?.id) {
+      console.error("closing_logs DB 저장 오류 상세:", logError?.message || logError);
       return false;
     }
+
+    const { error: detailError } = await supabase.from("closing_details").insert([
+      {
+        log_id: createdLog.id,
+        task_id: taskId || null,
+        photo_url: photoUrl,
+        is_completed: true,
+      },
+    ]);
+
+    if (detailError) {
+      console.error("closing_details DB 저장 오류 상세:", detailError.message || detailError);
+      return false;
+    }
+
     return true;
   } catch (err) {
     console.error("closing_details DB 저장 예외:", err);
