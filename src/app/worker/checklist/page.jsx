@@ -1,140 +1,88 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { tasksByShift } from "@/lib/dummyData";
-import { fetchTasks } from "@/lib/taskListStorage";
-import { getShiftCompletion, toggleTaskCompletion } from "@/lib/checklistStorage";
-import { getStoredPhotos, uploadTaskPhoto } from "@/lib/photoStorage";
-import ChecklistItem from "@/components/ChecklistItem";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { clearChecklistState } from "@/lib/checklistStorage";
+import { recordClockOut } from "@/lib/attendanceStorage";
 import PhoneFrame from "@/components/PhoneFrame";
 
-function WorkerChecklistContent() {
+export default function ReasonPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const rawShift = searchParams.get("shift");
-  const shift = rawShift && rawShift in tasksByShift ? rawShift : "마감";
+  const [reason, setReason] = useState("");
+  const [showToast, setShowToast] = useState(false);
+  const [showError, setShowError] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [completed, setCompleted] = useState({});
-  const [photoPreviews, setPhotoPreviews] = useState({});
-  const [uploadNotice, setUploadNotice] = useState("");
-
-  useEffect(() => {
-    let isMounted = true;
-    setLoading(true);
-    fetchTasks(shift).then((data) => {
-      if (isMounted) {
-        setTasks(data);
-        setLoading(false);
-      }
-    });
-    setCompleted(getShiftCompletion(shift));
-    const storedPhotos = getStoredPhotos();
-    if (storedPhotos && Object.keys(storedPhotos).length > 0) {
-      setPhotoPreviews(storedPhotos);
-    }
-    return () => {
-      isMounted = false;
-    };
-  }, [shift]);
-
-  function toggle(id) {
-    const next = toggleTaskCompletion(shift, id);
-    setCompleted({ ...next });
+  function handleChange(e) {
+    setReason(e.target.value.slice(0, 200));
   }
 
-  async function handleCamera(id) {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.capture = "environment";
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const result = await uploadTaskPhoto({
-        file,
-        taskId: id,
-        shift,
-        title: tasks.find((task) => task.id === id)?.title || "체크리스트",
-      });
-      if (result?.url) {
-        setPhotoPreviews((prev) => ({ ...prev, [id]: result.url }));
-        setUploadNotice("사진이 업로드되었습니다.");
-      } else {
-        setUploadNotice("사진 업로드에 실패했습니다. Supabase Storage 버킷을 확인해주세요.");
-      }
-    };
-    input.click();
+  async function handleSubmit() {
+    if (reason.trim().length === 0) {
+      setShowError(true);
+      setTimeout(() => setShowError(false), 1000);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await recordClockOut({ checklistComplete: false, reason: reason.trim() });
+      setShowToast(true);
+      setTimeout(() => {
+        clearChecklistState();
+        router.push("/worker");
+      }, 1200);
+    } catch (err) {
+      console.error(err);
+      setIsSubmitting(false);
+    }
   }
 
   return (
     <PhoneFrame>
-      <div className="relative h-full min-h-screen sm:min-h-[800px] flex flex-col items-center bg-pure-white">
-        <button
-          aria-label="Close"
-          onClick={() => router.push("/worker")}
-          className="material-symbols-outlined absolute top-4 right-4 text-primary p-2 z-50"
-        >
-          close
-        </button>
-
-        <main className="w-full pt-16 pb-24 px-gutter flex flex-col flex-1">
-          <section className="mb-section-gap">
-            <h2 className="font-display-mobile text-display-mobile font-semibold text-primary">
-              {shift} 체크리스트
-            </h2>
-            <p className="font-caption text-caption text-mid-gray mt-1">
-              오늘의 필수 할 일을 확인하고 완료해주세요.
-            </p>
-            {uploadNotice && (
-              <p className="font-caption text-caption text-primary mt-2">{uploadNotice}</p>
-            )}
-          </section>
-
-          {loading ? (
-            <div className="py-8 text-center text-mid-gray font-caption text-caption">
-              체크리스트 불러오는 중...
+      <div className="relative h-full min-h-screen sm:min-h-[800px] flex flex-col items-center justify-center bg-pure-white">
+        <main className="w-full px-container-mobile flex flex-col items-center max-w-sm">
+          <div className="w-full flex flex-col items-center gap-8">
+            <div className="text-center space-y-2">
+              <h2 className="font-headline-h2-mobile text-headline-h2-mobile text-primary">
+                미작성 사유 입력
+              </h2>
+              <p className="font-body-mobile text-body-mobile text-mid-gray">
+                완료되지 않은 항목에 대한 구체적인 사유를 기록해 주세요.
+              </p>
             </div>
-          ) : (
-            <div className="flex flex-col gap-list-gap">
-              {tasks.map((task) => (
-                <ChecklistItem
-                  key={task.id}
-                  title={task.title}
-                  completed={!!completed[task.id]}
-                  onToggle={() => toggle(task.id)}
-                  onCamera={() => handleCamera(task.id)}
-                  mode="worker"
-                  photoPreview={photoPreviews[task.id]}
-                />
-              ))}
-              {tasks.length === 0 && (
-                <p className="text-center font-caption text-caption text-mid-gray py-6">
-                  등록된 항목이 없습니다.
-                </p>
-              )}
+            <div className="w-full flex flex-col items-center">
+              <textarea
+                value={reason}
+                onChange={handleChange}
+                disabled={isSubmitting}
+                rows={6}
+                className={`w-full p-4 font-body-mobile text-body-mobile text-primary bg-pure-white border rounded-xl placeholder:text-mid-gray resize-none transition-all duration-200 ${
+                  showError ? "border-error" : "border-line-gray"
+                }`}
+                placeholder="체크리스트 미작성 사유를 작성하세요."
+              />
+              <div className="mt-3 flex justify-end w-full">
+                <span className="text-caption font-caption text-mid-gray">
+                  {reason.length} / 200
+                </span>
+              </div>
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="w-full h-[52px] mt-3 bg-primary text-on-primary font-button text-button rounded-xl transition-all hover:opacity-90 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+              >
+                {isSubmitting ? "제출 중..." : "제출"}
+                <span className="material-symbols-outlined text-[20px]">send</span>
+              </button>
             </div>
-          )}
+          </div>
         </main>
+
+        <div id="toast" className={showToast ? "show" : ""}>
+          제출 완료
+        </div>
       </div>
     </PhoneFrame>
-  );
-}
-
-export default function WorkerChecklistPage() {
-  return (
-    <Suspense
-      fallback={
-        <PhoneFrame>
-          <div className="flex items-center justify-center h-full min-h-[400px] text-mid-gray text-caption font-caption">
-            로딩 중...
-          </div>
-        </PhoneFrame>
-      }
-    >
-      <WorkerChecklistContent />
-    </Suspense>
   );
 }
