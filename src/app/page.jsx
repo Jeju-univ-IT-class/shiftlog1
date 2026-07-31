@@ -15,7 +15,6 @@ export default function LoginPage() {
   const [mode, setMode] = useState("login");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [infoText, setInfoText] = useState("Supabase Auth로 이메일과 비밀번호를 사용해 로그인하세요.");
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -53,7 +52,7 @@ export default function LoginPage() {
       setError(
         mode === "login"
           ? "이메일 또는 비밀번호가 올바르지 않습니다."
-          : "계정 생성에 실패했습니다. Supabase Auth 설정을 확인해주세요."
+          : "계정 생성에 실패했습니다. 다시 시도해 주세요."
       );
       setPassword("");
     } catch (err) {
@@ -68,7 +67,7 @@ export default function LoginPage() {
     <PhoneFrame>
       <div className="relative h-full min-h-screen sm:min-h-[800px] flex flex-col items-center justify-center text-primary selection:bg-surface-gray overflow-hidden">
         <header className="w-full flex flex-col items-center px-gutter text-center max-w-sm">
-          <h1 className="font-display-mobile text-display-mobile text-primary">SUPABASE LOGIN</h1>
+          <h1 className="font-display-mobile text-display-mobile text-primary">SHIFTLOG LOGIN</h1>
 
           <div className="flex rounded-full border border-line-gray p-1 mt-4">
             <button
@@ -76,7 +75,6 @@ export default function LoginPage() {
               onClick={() => {
                 setMode("login");
                 setError("");
-                setInfoText("Supabase Auth로 이메일과 비밀번호를 사용해 로그인하세요.");
               }}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
                 mode === "login" ? "bg-primary text-pure-white" : "text-mid-gray"
@@ -89,7 +87,6 @@ export default function LoginPage() {
               onClick={() => {
                 setMode("signup");
                 setError("");
-                setInfoText("새 계정을 만들고 Supabase Auth로 바로 시작하세요.");
               }}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
                 mode === "signup" ? "bg-primary text-pure-white" : "text-mid-gray"
@@ -100,8 +97,6 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4 w-full mt-6">
-            <p className="font-caption text-caption text-mid-gray text-left">{infoText}</p>
-
             <div className="flex flex-col gap-2">
               <input
                 className="w-full px-4 py-3 rounded-xl border border-line-gray focus:outline-none focus:border-primary transition-colors text-body-mobile"
@@ -170,15 +165,6 @@ export default function LoginPage() {
         </header>
 
         <main className="w-full max-w-sm px-6 pb-12"></main>
-
-        <footer
-          className="w-full pb-10 flex flex-col items-center gap-4"
-          style={{ position: "absolute", bottom: 0 }}
-        >
-          <p className="font-caption text-caption text-mid-gray text-center px-4">
-            Supabase Auth가 활성화되어 있지 않으면, 로그인은 바로 되지 않습니다. 프로젝트 URL과 anon key를 확인해주세요.
-          </p>
-        </footer>
       </div>
     </PhoneFrame>
   );

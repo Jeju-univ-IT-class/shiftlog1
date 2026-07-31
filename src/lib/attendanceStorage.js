@@ -3,21 +3,11 @@ import { supabase, isSupabaseConfigured } from "./supabaseClient";
 const LOGS_KEY = "oneuri_attendance_logs";
 const CURRENT_LOG_KEY = "oneuri_current_attendance_log_id";
 
-function nowTime() {
-  const d = new Date();
-  return d.toLocaleTimeString("ko-KR", { 
-    hour: "2-digit", 
-    minute: "2-digit", 
-    hour12: false, 
-    timeZone: "Asia/Seoul" 
-  });
-}
-
 function formatKSTTime(isoString) {
   if (!isoString) return "-";
   const date = new Date(isoString);
   if (isNaN(date.getTime())) return isoString;
-  
+
   return date.toLocaleTimeString("ko-KR", {
     hour: "2-digit",
     minute: "2-digit",
@@ -37,7 +27,24 @@ function writeLogs(logs) {
   window.localStorage.setItem(LOGS_KEY, JSON.stringify(logs));
 }
 
-// 1. 출근 기록
+// 1. Supabase에서 체크리스트(tasks) 전체 가져오기
+export async function fetchStoreTasks() {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .order("display_order", { ascending: true });
+
+      if (!error && data) return data;
+    } catch (err) {
+      console.warn("Supabase fetchStoreTasks 에러:", err);
+    }
+  }
+  return [];
+}
+
+// 2. 출근 기록 (Supabase DB + 로컬 저장)
 export async function recordClockIn(workerName = "근무자") {
   const nowISO = new Date().toISOString();
   let dbLogId = null;
@@ -65,15 +72,22 @@ export async function recordClockIn(workerName = "근무자") {
   }
 
   const logId = dbLogId || `log-${Date.now()}`;
+  const nowDisplayTime = new Date().toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Seoul",
+  });
+
   const newLog = {
     id: logId,
     name: workerName,
     worker_name: workerName,
-    clockIn: nowTime(),
+    clockIn: nowDisplayTime,
     clockOut: null,
     checklistComplete: null,
     reason: null,
-    createdAt: nowISO
+    createdAt: nowISO,
   };
 
   const logs = readLogs();
@@ -82,11 +96,10 @@ export async function recordClockIn(workerName = "근무자") {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(CURRENT_LOG_KEY, String(logId));
   }
-
   return logId;
 }
 
-// 2. 퇴근 기록
+// 3. 퇴근 기록 (사유 포함)
 export async function recordClockOut({ checklistComplete, reason = null }) {
   if (typeof window === "undefined") return;
   const currentId = window.localStorage.getItem(CURRENT_LOG_KEY);
@@ -107,42 +120,73 @@ export async function recordClockOut({ checklistComplete, reason = null }) {
     }
   }
 
+  const nowDisplayTime = new Date().toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Seoul",
+  });
+
   const logs = readLogs();
   const updated = logs.map((log) =>
     String(log.id) === String(currentId)
-      ? { ...log, clockOut: nowTime(), checklistComplete, reason }
+      ? { ...log, clockOut: nowDisplayTime, checklistComplete, reason }
       : log
   );
   writeLogs(updated);
+
   window.localStorage.removeItem(CURRENT_LOG_KEY);
 }
 
-// 3. 특정한 날짜(targetDate: 'YYYY-MM-DD')의 근태 기록 조회 함수 (★ 핵심 구현)
+// 날짜별 근태 + 인증 사진(photos) 통합 조회 함수 (테이블 유연성 보완)
+// 날짜별 근태 + 인증 사진(photos) 통합 조회 함수 (에러 완벽 조치)
+// 날짜별 근태 + 근무자별 개인 인증 사진(photos) 1:1 매칭 조회 함수
 export async function fetchAttendanceLogsByDate(targetDateStr) {
-  // 선택한 날짜의 한국 기준 00:00:00 ~ 23:59:59 타임스탬프 계산
   const startOfDay = new Date(`${targetDateStr}T00:00:00+09:00`).toISOString();
   const endOfDay = new Date(`${targetDateStr}T23:59:59+09:00`).toISOString();
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase
+      // 1. 출퇴근 로그(attendance_logs) 조회
+      const { data: logs, error: logErr } = await supabase
         .from("attendance_logs")
         .select("*")
         .gte("clock_in_time", startOfDay)
         .lte("clock_in_time", endOfDay)
         .order("clock_in_time", { ascending: false });
 
-      if (!error && data) {
-        return data.map((log) => ({
-          id: log.id,
-          name: log.worker_name || log.user_name || "근무자",
-          worker_name: log.worker_name || log.user_name || "근무자",
-          clockIn: formatKSTTime(log.clock_in_time),
-          clockOut: formatKSTTime(log.clock_out_time),
-          checklistComplete: log.checklist_complete,
-          reason: log.reason,
-          reason_created_at: log.reason_created_at,
-        }));
+      // 2. closing_details 테이블 데이터 전체 조회
+      const { data: detailsData, error: detailErr } = await supabase
+        .from("closing_details")
+        .select("*");
+
+      if (!logErr && logs) {
+        return logs.map((log) => {
+          const workerName = log.worker_name || log.user_name || "근무자";
+
+          // ★ 핵심: 해당 근무자 이름(worker_name)과 일치하는 사진만 필터링!
+          const userPhotos = (!detailErr && detailsData)
+            ? detailsData
+                .filter((item) => {
+                  // DB에 저장된 worker_name과 출퇴근 로그의 worker_name 비교
+                  return item.worker_name === workerName;
+                })
+                .map((item) => item.photo_url || item.image_url || item.photo)
+                .filter(Boolean)
+            : [];
+
+          return {
+            id: log.id,
+            name: workerName,
+            worker_name: workerName,
+            clockIn: formatKSTTime(log.clock_in_time),
+            clockOut: formatKSTTime(log.clock_out_time),
+            checklistComplete: log.checklist_complete,
+            reason: log.reason,
+            reason_created_at: log.reason_created_at,
+            photos: userPhotos, // ★ 해당 알바생이 올린 사진만 개별 매칭
+          };
+        });
       }
     } catch (err) {
       console.warn("Supabase 날짜별 조회 실패, 로컬데이터 사용:", err);
@@ -151,16 +195,15 @@ export async function fetchAttendanceLogsByDate(targetDateStr) {
 
   // 로컬 fallback 필터링
   const logs = readLogs();
-  return logs.filter(log => {
+  return logs.filter((log) => {
     if (!log.createdAt) return true;
-    const logDate = new Date(log.createdAt).toISOString().split('T')[0];
+    const logDate = new Date(log.createdAt).toISOString().split("T")[0];
     return logDate === targetDateStr;
   });
 }
 
-// 기존 전체 불러오기 호환용
 export async function fetchAttendanceLogs() {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split("T")[0];
   return fetchAttendanceLogsByDate(todayStr);
 }
 
